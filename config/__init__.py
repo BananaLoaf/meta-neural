@@ -147,3 +147,8 @@ if __name__ == '__main__':
         dataset = {GROUP_NAME: "Model params",
                    ARGS: ["-ds", "--dataset"],
                    KWARGS: {TYPE: str, REQUIRED: True, HELP: "Path to dataset"}}
+
+
+    c = Config.cli()
+    c.save(Path("config.json"))
+    c2 = Config.load(Path("config.json"))
