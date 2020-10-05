@@ -27,7 +27,7 @@ class ConfigBuilder:
             setattr(self.__class__, field, self.set_defaults(scheme))
 
     def get_attrs(self) -> str:
-        for attr, value in vars(self.__class__).items():
+        for attr, value in {**vars(self.__class__), **vars(self.__class__.__base__)}.items():
             if not (attr.startswith("__") and attr.endswith("__")) and not isinstance(value, Callable):
                 yield attr
 
@@ -116,39 +116,73 @@ class ConfigBuilder:
             delattr(self.__class__, field)
 
 
-if __name__ == '__main__':
-    class Config(ConfigBuilder):
-        """
-        This config implementation allows to easily trace param usage with the help of IDE
+class DefaultConfig(ConfigBuilder):
+    """
+    This config implementation allows to easily trace param usage with the help of IDE
 
-        Examples:
-        name = {GROUP_NAME: "Model",                                       # Not required
-                ARGS: ["--name"],                                          # Required
-                KWARGS: {TYPE: str, REQUIRED: True, HELP: "Model name"}},  # Required
-                SAVE: False                                                # Saving in config.json, gets wiped on save (default: True)
+    Examples:
+    name = {GROUP_NAME: "Model",                                       # Not required
+            ARGS: ["--name"],                                          # Required
+            KWARGS: {TYPE: str, REQUIRED: True, HELP: "Model name"}},  # Required
+            SAVE: False                                                # Saving in config.json, gets wiped on save (default: True)
 
-        # Does not provide cli param, just exists
-        step = {CONSTANT: 0,
-                SAVE; False}
+    # Does not provide cli param, just exists
+    step = {CONSTANT: 0,
+            SAVE; False}
 
-        # Not used
-        device = {GROUP_NAME: "Device params",
-                  EXCLUSIVE_GROUP: [
-                      {ARGS: ["--cpu"],
-                       KWARGS: {TYPE: str, DEFAULT: "/device:CPU:0", CHOICES: [dev.name for dev in tf.config.list_logical_devices("CPU")], HELP: "CPU (default: %(default)s)"}},
-                      {ARGS: ["--gpu"],
-                       KWARGS: {TYPE: str, HELP: "GPUs"}}
-                  ],
-                  REQUIRED: False}  # Only used with EXCLUSIVE_GROUP, if not required, one of elements in a group must have DEFAULT value (default: True)
-        """
+    # Not used
+    device = {GROUP_NAME: "Device params",
+              EXCLUSIVE_GROUP: [
+                  {ARGS: ["--cpu"],
+                   KWARGS: {TYPE: str, DEFAULT: "/device:CPU:0", CHOICES: [dev.name for dev in tf.config.list_logical_devices("CPU")], HELP: "CPU (default: %(default)s)"}},
+                  {ARGS: ["--gpu"],
+                   KWARGS: {TYPE: str, HELP: "GPUs"}}
+              ],
+              REQUIRED: False}  # Only used with EXCLUSIVE_GROUP, if not required, one of elements in a group must have DEFAULT value (default: True)
+    """
 
-        name = {ARGS: ["--name"],
-                KWARGS: {TYPE: str, REQUIRED: True, HELP: "Model name"}}
-        dataset = {GROUP_NAME: "Model params",
-                   ARGS: ["-ds", "--dataset"],
-                   KWARGS: {TYPE: str, REQUIRED: True, HELP: "Path to dataset"}}
+    name = {ARGS: ["--name"],
+            KWARGS: {TYPE: str, REQUIRED: True, HELP: "Model name"}}
 
+    # Device params
+    use_tpu = {GROUP_NAME: "Device params",
+               ARGS: ["--use-tpu"],
+               KWARGS: {ACTION: "store_true",
+                        HELP: "Use Google Cloud TPU, if True, --gpu param is ignored (default: %(default)s)"}}
+    tpu_name = {GROUP_NAME: "Device params",
+                ARGS: ["--tpu-name"],
+                KWARGS: {TYPE: str, DEFAULT: None,
+                         HELP: "Google Cloud TPU name, if None and flag --use-tpu is set, will try to detect automatically (default: %(default)s)"}}
+    devices = {GROUP_NAME: "Device params",
+               ARGS: ["--gpu"],
+               KWARGS: {TYPE: str, DEFAULT: None,
+                        HELP: "Available GPUs: {}, list devices with , as delimiter"}}  # Format however is needed
+    xla_jit = {GROUP_NAME: "Device params",
+               ARGS: ["--xla-jit"],
+               KWARGS: {ACTION: "store_true",
+                        HELP: "XLA Just In Time compilation, https://www.tensorflow.org/xla (default: %(default)s)"}}
 
-    c = Config.cli()
-    c.save(Path("config.json"))
-    c2 = Config.load(Path("config.json"))
+    # Training params
+    step = {CONSTANT: 0}
+    steps = {GROUP_NAME: "Training params",
+             ARGS: ["-s", "--steps"],
+             KWARGS: {TYPE: int, DEFAULT: 1_000_000, HELP: "Steps (default: %(default)s)"}}
+    quantization_training = {GROUP_NAME: "Training params",
+                             ARGS: ["-qt", "--quantizised-training"],
+                             KWARGS: {ACTION: "store_true",
+                                      HELP: "Quantization aware training, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
+    batch_size = {GROUP_NAME: "Training params",
+                  ARGS: ["-b", "--batch-size"],
+                  KWARGS: {TYPE: int, DEFAULT: 2, HELP: "Batch size (default: %(default)s)"}}
+    checkpoint_freq = {GROUP_NAME: "Training params",
+                       ARGS: ["-cf", "--checkpoint-freq"],
+                       KWARGS: {TYPE: int, DEFAULT: 10_000,
+                                HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
+
+    # Saving params
+    save_tflite = {GROUP_NAME: "Saving params",
+                   ARGS: ["--tflite"],
+                   KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as tflite model"}}
+    save_tflite_q = {GROUP_NAME: "Saving params",
+                     ARGS: ["--tflite-q"],
+                     KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as quantizised tflite model"}}
