@@ -27,7 +27,7 @@ class ConfigBuilder:
             setattr(self.__class__, field, self.set_defaults(scheme))
 
     def get_attrs(self) -> str:
-        for attr, value in vars(self.__class__).items():
+        for attr, value in {**vars(self.__class__), **vars(self.__class__.__base__)}.items():
             if not (attr.startswith("__") and attr.endswith("__")) and not isinstance(value, Callable):
                 yield attr
 
@@ -168,15 +168,16 @@ class DefaultConfig(ConfigBuilder):
              ARGS: ["-s", "--steps"],
              KWARGS: {TYPE: int, DEFAULT: 1_000_000, HELP: "Steps (default: %(default)s)"}}
     quantization_training = {GROUP_NAME: "Training params",
-                            ARGS: ["-qt", "--quantizised-training"],
-                            KWARGS: {ACTION: "store_true",
-                                     HELP: "Quantization aware training, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
+                             ARGS: ["-qt", "--quantizised-training"],
+                             KWARGS: {ACTION: "store_true",
+                                      HELP: "Quantization aware training, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
     batch_size = {GROUP_NAME: "Training params",
                   ARGS: ["-b", "--batch-size"],
                   KWARGS: {TYPE: int, DEFAULT: 2, HELP: "Batch size (default: %(default)s)"}}
     checkpoint_freq = {GROUP_NAME: "Training params",
                        ARGS: ["-cf", "--checkpoint-freq"],
-                       KWARGS: {TYPE: int, DEFAULT: 10_000, HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
+                       KWARGS: {TYPE: int, DEFAULT: 10_000,
+                                HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
 
     # Saving params
     save_tflite = {GROUP_NAME: "Saving params",
