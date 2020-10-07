@@ -30,9 +30,9 @@ class Runner:
         self.model_path = self.run_path.joinpath("model")
 
         ################################################################
-        self.dataloader = self._init_dataloader()
+        self.dataloader = self.init_dataloader()
         self._strategy = self._init_strategy()
-        self._model_registry = self._init_networks()
+        self._model_registry = self.init_networks()
 
     ################################################################
     # https://www.tensorflow.org/api_docs/python/tf/distribute
@@ -92,11 +92,11 @@ class Runner:
         for model_name, reg in self._model_registry.items():
             yield model_name, reg[MODEL], reg[OPTIMIZER], reg[CHECKPOINT], reg[CHECKPOINT_MANAGER]
 
-    def _init_dataloader(self) -> Type[DefaultDataloader]:
+    def init_dataloader(self) -> Type[DefaultDataloader]:
         raise NotImplementedError
 
     @with_strategy
-    def _init_networks(self) -> dict:
+    def init_networks(self) -> dict:
         raise NotImplementedError
 
     ################################################################
