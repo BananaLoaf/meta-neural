@@ -7,14 +7,11 @@ class DefaultDataloader:
     def __init__(self, batch_size: int):
         self.batch_size = batch_size
 
-    def __len__(self):
-        raise NotImplementedError
-
     def __next__(self) -> Union[tf.Tensor, Tuple[tf.Tensor, ...]]:
         raise NotImplementedError
 
     def with_batch_size(dl, n: int):
-        class Context:
+        class BatchSizeContext:
             old_batch_size = dl.batch_size
             new_batch_size = n
 
@@ -24,4 +21,4 @@ class DefaultDataloader:
             def __exit__(self, exc_type, exc_val, exc_tb):
                 dl.batch_size = self.old_batch_size
 
-        return Context()
+        return BatchSizeContext()

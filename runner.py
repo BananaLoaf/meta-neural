@@ -5,8 +5,8 @@ from typing import Tuple, Optional, Type
 from pathlib import Path
 import tensorflow as tf
 
-from ..config import DefaultConfig
-from ..dataloader import DefaultDataloader
+from metaneural.config import DefaultConfig
+from metaneural.dataloader import DefaultDataloader
 
 
 MODEL = "MODEL"
