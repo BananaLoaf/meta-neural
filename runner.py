@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Tuple, Optional, Type
+from typing import Tuple, Optional, Type, Dict
 
 from pathlib import Path
 import tensorflow as tf
@@ -13,6 +13,23 @@ MODEL = "MODEL"
 OPTIMIZER = "OPTIMIZER"
 CHECKPOINT = "CHECKPOINT"
 CHECKPOINT_MANAGER = "CHECKPOINT_MANAGER"
+QUANTIZATION_TRAINING = "QUANTIZATION_TRAINING"
+
+
+class RegistryEntry:
+    def __init__(self,
+                 name: str,
+                 q_aware_training: bool,
+                 model: tf.keras.models.Model,
+                 optimizer: tf.keras.optimizers.Optimizer,
+                 checkpoint: tf.train.Checkpoint,
+                 checkpoint_manager: tf.train.CheckpointManager):
+        self.name = name
+        self.q_aware_training = q_aware_training
+        self.model = model
+        self.optimizer = optimizer
+        self.checkpoint = checkpoint
+        self.checkpoint_manager = checkpoint_manager
 
 
 class Runner:
@@ -30,9 +47,22 @@ class Runner:
         self.model_path = self.run_path.joinpath("model")
 
         ################################################################
+        self.run_path.mkdir(parents=True, exist_ok=True)
+        self.train_writer = tf.summary.create_file_writer(str(self.run_path.joinpath("train")))
+        self.train_writer.set_as_default()
+
+        self.validate_writer = tf.summary.create_file_writer(str(self.run_path.joinpath("validate")))
+
+        ################################################################
         self.dataloader = self.init_dataloader()
         self._strategy = self._init_strategy()
-        self._model_registry = self.init_networks()
+        self.model_registry = self.init_networks()
+
+        if config.quantization_training:
+            import tensorflow_model_optimization as tfmot
+            for re in self.model_registry:
+                if re.q_aware_training:
+                    re.model = tfmot.quantization.keras.quantize_model(re.model)
 
     ################################################################
     # https://www.tensorflow.org/api_docs/python/tf/distribute
@@ -87,29 +117,24 @@ class Runner:
         return wrapper
 
     ################################################################
-    @property
-    def model_registry(self) -> Tuple[str, tf.keras.models.Model, tf.keras.optimizers.Optimizer, tf.train.Checkpoint, tf.train.CheckpointManager]:
-        for model_name, reg in self._model_registry.items():
-            yield model_name, reg[MODEL], reg[OPTIMIZER], reg[CHECKPOINT], reg[CHECKPOINT_MANAGER]
-
     def init_dataloader(self) -> Type[DefaultDataloader]:
         raise NotImplementedError
 
     @with_strategy
-    def init_networks(self) -> dict:
+    def init_networks(self) -> Tuple[RegistryEntry, ...]:
         raise NotImplementedError
 
     ################################################################
     @classmethod
-    def train(cls, config: Type[DefaultConfig]):
+    def new_run(cls, config: Type[DefaultConfig]):
         self = cls(config=config,
                    run_directory=Path(f"runs/{config.name}_{datetime.now().replace(microsecond=0).isoformat()}"))
         self._summary(plot=True)
 
         try:
-            self._train()
+            self.train()
         except KeyboardInterrupt:
-            print("Saving and stopping...")
+            print("\nSaving and stopping...")
             self._save_models()
 
     @classmethod
@@ -124,46 +149,52 @@ class Runner:
     def train_step(self) -> dict:
         raise NotImplementedError
 
-    def _train(self):
+    def train(self):
+        raise NotImplementedError
+
+    def validate(self) -> dict:
+        raise NotImplementedError
+
+    ################################################################
+    def save_samples(self, step: int):
         raise NotImplementedError
 
     ################################################################
     # Saving, snapping, etc
     def _summary(self, plot: bool = False):
-        for model_name, model, optimizer, checkpoint, checkpoint_manager in self.model_registry:
-            model.summary()
+        for re in self.model_registry:
+            re.model.summary()
             if plot:
-                img_path = self.run_path.joinpath(model_name)
-                tf.keras.utils.plot_model(model, to_file=str(img_path), show_shapes=True, dpi=64)
+                img_path = self.run_path.joinpath(re.name)
+                tf.keras.utils.plot_model(re.model, to_file=str(img_path), show_shapes=True, dpi=64)
 
     @merge
     def _snap(self, step: int):
-        for model_name, model, optimizer, checkpoint, checkpoint_manager in self.model_registry:
-            checkpoint_manager.save(step)
+        for re in self.model_registry:
+            re.checkpoint_manager.save(step)
 
     @with_strategy
     def _restore(self):
-        for model_name, model, optimizer, checkpoint, checkpoint_manager in self.model_registry:
-            checkpoint.restore(checkpoint_manager.latest_checkpoint)
+        for re in self.model_registry:
+            re.checkpoint.restore(re.checkpoint_manager.latest_checkpoint)
 
     def _save_models(self):
-        for model_name, model, optimizer, checkpoint, checkpoint_manager in self.model_registry:
+        for re in self.model_registry:
             # Tensorflow
-            model.save(str(self.model_path.joinpath(model_name)), save_format="tf")
+            re.model.save(str(self.model_path.joinpath(re.name)), save_format="tf")
 
             # TFLite
             if self.config.save_tflite:
-                converter = tf.lite.TFLiteConverter.from_keras_model(model)
-                with self.model_path.joinpath(f"{model_name}.tflite").open("wb") as file:
+                converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
+                with self.model_path.joinpath(f"{re.name}.tflite").open("wb") as file:
                     file.write(converter.convert())
 
             # TFLite quantizised
             if self.config.save_tflite_q:
-                converter = tf.lite.TFLiteConverter.from_keras_model(model)
+                converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
                 converter.optimizations = [tf.lite.Optimize.DEFAULT]
-                with self.model_path.joinpath(f"{model_name}_q.tflite").open("wb") as file:
+                with self.model_path.joinpath(f"{re.name}_q.tflite").open("wb") as file:
                     file.write(converter.convert())
 
     def _save_config(self):
         self.config.save(self.run_path.joinpath("config.json"))
-

@@ -4,21 +4,13 @@ import tensorflow as tf
 
 
 class DefaultDataloader:
-    def __init__(self, batch_size: int):
-        self.batch_size = batch_size
-
-    def __next__(self) -> Union[tf.Tensor, Tuple[tf.Tensor, ...]]:
+    @property
+    def train_split_size(self) -> int:
         raise NotImplementedError
 
-    def with_batch_size(dl, n: int):
-        class BatchSizeContext:
-            old_batch_size = dl.batch_size
-            new_batch_size = n
+    @property
+    def validation_split_size(self) -> int:
+        raise NotImplementedError
 
-            def __enter__(self):
-                dl.batch_size = self.new_batch_size
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                dl.batch_size = self.old_batch_size
-
-        return BatchSizeContext()
+    def next(self, batch_size: int, shuffle: bool = True, validate: bool = False) -> Union[tf.Tensor, Tuple[tf.Tensor, ...]]:
+        raise NotImplementedError

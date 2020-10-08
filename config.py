@@ -178,6 +178,13 @@ class DefaultConfig(ConfigBuilder):
                        ARGS: ["-cf", "--checkpoint-freq"],
                        KWARGS: {TYPE: int, DEFAULT: 10_000,
                                 HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
+    validation_freq = {GROUP_NAME: "Training params",
+                       ARGS: ["-vf", "--validation-freq"],
+                       KWARGS: {TYPE: int, DEFAULT: 1_000,
+                                HELP: "Validation frequency in steps (default: %(default)s)"}}
+    validation_split = {GROUP_NAME: "Dataloader params",
+                        ARGS: ["-vs"],
+                        KWARGS: {TYPE: float, DEFAULT: 0.1, HELP: "Validation split"}}
 
     # Saving params
     save_tflite = {GROUP_NAME: "Saving params",
