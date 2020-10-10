@@ -173,16 +173,19 @@ class DefaultConfig(ConfigBuilder):
                                       HELP: "Quantization aware training, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
     batch_size = {GROUP_NAME: "Training params",
                   ARGS: ["-b", "--batch-size"],
-                  KWARGS: {TYPE: int, DEFAULT: 2, HELP: "Batch size (default: %(default)s)"}}
+                  KWARGS: {TYPE: int, DEFAULT: 2, HELP: "Batch size (default: %(default)s)"}}  # TODO remove extra args
     checkpoint_freq = {GROUP_NAME: "Training params",
                        ARGS: ["-cf", "--checkpoint-freq"],
                        KWARGS: {TYPE: int, DEFAULT: 10_000,
                                 HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
+    sample_freq = {GROUP_NAME: "Training params",
+                   ARGS: ["-sf", "--sample-freq"],
+                   KWARGS: {TYPE: int, DEFAULT: 100, HELP: "Sampling frequency in steps (default: %(default)s)"}}
     validation_freq = {GROUP_NAME: "Training params",
                        ARGS: ["-vf", "--validation-freq"],
                        KWARGS: {TYPE: int, DEFAULT: 1_000,
                                 HELP: "Validation frequency in steps (default: %(default)s)"}}
-    validation_split = {GROUP_NAME: "Dataloader params",
+    validation_split = {GROUP_NAME: "Training params",
                         ARGS: ["-vs"],
                         KWARGS: {TYPE: float, DEFAULT: 0.1, HELP: "Validation split"}}
 

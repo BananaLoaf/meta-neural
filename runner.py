@@ -1,13 +1,11 @@
 import os
 from datetime import datetime
-from typing import Tuple, Optional, Type, Dict, Generator
+from typing import Tuple, Optional, Type, Dict, Generator, Any
 
 from pathlib import Path
 import tensorflow as tf
 
 from metaneural.config import DefaultConfig
-from metaneural.dataloader import DefaultDataloader
-
 
 MODEL = "MODEL"
 OPTIMIZER = "OPTIMIZER"
@@ -19,19 +17,31 @@ QUANTIZATION_TRAINING = "QUANTIZATION_TRAINING"
 class RegistryEntry:
     def __init__(self,
                  name: str,
-                 q_aware_training: bool,
                  model: tf.keras.models.Model,
                  optimizer: tf.keras.optimizers.Optimizer,
-                 checkpoint: tf.train.Checkpoint,
-                 checkpoint_manager: tf.train.CheckpointManager,
+                 quant_aware_train: bool,
                  representative_dataset: Optional[Generator] = None):
         self.name = name
-        self.q_aware_training = q_aware_training
         self.model = model
         self.optimizer = optimizer
-        self.checkpoint = checkpoint
-        self.checkpoint_manager = checkpoint_manager
+
+        self.quant_aware_train = quant_aware_train
         self.representative_dataset = representative_dataset
+
+        self.checkpoint = None
+        self.checkpoint_manager = None
+
+    def set_checkpoint(self, checkpoints_path: Path, max_to_keep: int):
+        self.checkpoint = tf.train.Checkpoint(optimizer=self.optimizer, model=self.model)
+        self.checkpoint_manager = tf.train.CheckpointManager(self.checkpoint,
+                                                             directory=checkpoints_path.joinpath(self.name),
+                                                             max_to_keep=max_to_keep,
+                                                             checkpoint_name=self.name)
+
+    def quantize_model(self, global_quant_aware_train: bool):
+        if global_quant_aware_train and self.quant_aware_train:
+            import tensorflow_model_optimization as tfmot
+            self.model = tfmot.quantization.keras.quantize_model(self.model)
 
 
 class Runner:
@@ -45,7 +55,7 @@ class Runner:
         # Paths
         self.run_path = run_directory
         self.samples_path = self.run_path.joinpath("samples")
-        self.checkpoints_path = self.run_path.joinpath("checkpoints")
+        self.samples_path.mkdir(exist_ok=True, parents=True)
         self.model_path = self.run_path.joinpath("model")
 
         ################################################################
@@ -60,11 +70,9 @@ class Runner:
         self._strategy = self._init_strategy()
         self.model_registry = self.init_networks()
 
-        if config.quant_aware_train:
-            import tensorflow_model_optimization as tfmot
-            for re in self.model_registry:
-                if re.q_aware_training:
-                    re.model = tfmot.quantization.keras.quantize_model(re.model)
+        for re in self.model_registry:
+            re.set_checkpoint(self.run_path.joinpath("checkpoints"), max_to_keep=self.config.steps)
+            re.quantize_model(config.quant_aware_train)
 
     ################################################################
     # https://www.tensorflow.org/api_docs/python/tf/distribute
@@ -119,7 +127,7 @@ class Runner:
         return wrapper
 
     ################################################################
-    def init_dataloader(self) -> Type[DefaultDataloader]:
+    def init_dataloader(self) -> Any:
         raise NotImplementedError
 
     @with_strategy
@@ -145,7 +153,12 @@ class Runner:
                    run_directory=run_directory)
         self._restore()
         self._summary()
-        return self
+
+        try:
+            self.train()
+        except KeyboardInterrupt:
+            print("\nSaving and stopping...")
+            self._save_models()
 
     ################################################################
     def train_step(self) -> dict:
@@ -182,7 +195,7 @@ class Runner:
         for re in self.model_registry:
             re.checkpoint.restore(re.checkpoint_manager.latest_checkpoint)
 
-    def _save_models(self):
+    def _save_models(self):  # TODO separate converter
         for re in self.model_registry:
             # Tensorflow
             re.model.save(str(self.model_path.joinpath(re.name)), save_format="tf")
@@ -212,7 +225,7 @@ class Runner:
                     # Full integer quantization, integer only
                     if self.config.int_q:
                         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-                        converter.inference_input_type = tf.int8  # or tf.uint8
+                        converter.inference_input_type = tf.int8  # or tf.uint8  # TODO add type option
                         converter.inference_output_type = tf.int8  # or tf.uint8
                         with self.model_path.joinpath(f"{re.name}.int-q.tflite").open("wb") as file:
                             file.write(converter.convert())
