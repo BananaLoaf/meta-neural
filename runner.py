@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Tuple, Optional, Type, Dict
+from typing import Tuple, Optional, Type, Dict, Generator
 
 from pathlib import Path
 import tensorflow as tf
@@ -23,13 +23,15 @@ class RegistryEntry:
                  model: tf.keras.models.Model,
                  optimizer: tf.keras.optimizers.Optimizer,
                  checkpoint: tf.train.Checkpoint,
-                 checkpoint_manager: tf.train.CheckpointManager):
+                 checkpoint_manager: tf.train.CheckpointManager,
+                 representative_dataset: Optional[Generator] = None):
         self.name = name
         self.q_aware_training = q_aware_training
         self.model = model
         self.optimizer = optimizer
         self.checkpoint = checkpoint
         self.checkpoint_manager = checkpoint_manager
+        self.representative_dataset = representative_dataset
 
 
 class Runner:
@@ -47,7 +49,7 @@ class Runner:
         self.model_path = self.run_path.joinpath("model")
 
         ################################################################
-        self.run_path.mkdir(parents=True, exist_ok=True)
+        # run_path gets created with writers
         self.train_writer = tf.summary.create_file_writer(str(self.run_path.joinpath("train")))
         self.train_writer.set_as_default()
 
@@ -58,7 +60,7 @@ class Runner:
         self._strategy = self._init_strategy()
         self.model_registry = self.init_networks()
 
-        if config.quantization_training:
+        if config.quant_aware_train:
             import tensorflow_model_optimization as tfmot
             for re in self.model_registry:
                 if re.q_aware_training:
@@ -156,7 +158,7 @@ class Runner:
         raise NotImplementedError
 
     ################################################################
-    def save_samples(self, step: int):
+    def sample(self, step: int):
         raise NotImplementedError
 
     ################################################################
@@ -165,8 +167,10 @@ class Runner:
         for re in self.model_registry:
             re.model.summary()
             if plot:
-                img_path = self.run_path.joinpath(re.name)
-                tf.keras.utils.plot_model(re.model, to_file=str(img_path), show_shapes=True, dpi=64)
+                tf.keras.utils.plot_model(re.model, to_file=self.run_path.joinpath(re.name), show_shapes=True, dpi=64)
+
+    def _save_config(self):
+        self.config.save(self.run_path.joinpath("config.json"))
 
     @merge
     def _snap(self, step: int):
@@ -183,18 +187,40 @@ class Runner:
             # Tensorflow
             re.model.save(str(self.model_path.joinpath(re.name)), save_format="tf")
 
-            # TFLite
-            if self.config.save_tflite:
-                converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
-                with self.model_path.joinpath(f"{re.name}.tflite").open("wb") as file:
-                    file.write(converter.convert())
+            if self.config.save_tflite or self.config.save_tflite_q:
+                # TFLite
+                if self.config.save_tflite:
+                    converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
+                    with self.model_path.joinpath(f"{re.name}.tflite").open("wb") as file:
+                        file.write(converter.convert())
 
-            # TFLite quantizised
-            if self.config.save_tflite_q:
-                converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
-                converter.optimizations = [tf.lite.Optimize.DEFAULT]
-                with self.model_path.joinpath(f"{re.name}_q.tflite").open("wb") as file:
-                    file.write(converter.convert())
+                # TFLite quantizised
+                if self.config.save_tflite_q:
+                    converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
 
-    def _save_config(self):
-        self.config.save(self.run_path.joinpath("config.json"))
+                    # Dynamic range quantization
+                    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+                    with self.model_path.joinpath(f"{re.name}.q.tflite").open("wb") as file:
+                        file.write(converter.convert())
+
+                    converter.representative_dataset = re.representative_dataset
+                    # Full integer quantization, integer with float fallback
+                    if self.config.int_float_q:
+                        with self.model_path.joinpath(f"{re.name}.int-float-q.tflite").open("wb") as file:
+                            file.write(converter.convert())
+
+                    # Full integer quantization, integer only
+                    if self.config.int_q:
+                        converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+                        converter.inference_input_type = tf.int8  # or tf.uint8
+                        converter.inference_output_type = tf.int8  # or tf.uint8
+                        with self.model_path.joinpath(f"{re.name}.int-q.tflite").open("wb") as file:
+                            file.write(converter.convert())
+
+                    # Float16 quantization
+                    if self.config.f16_q:
+                        converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
+                        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+                        converter.target_spec.supported_types = [tf.float16]
+                        with self.model_path.joinpath(f"{re.name}.f16-q.tflite").open("wb") as file:
+                            file.write(converter.convert())

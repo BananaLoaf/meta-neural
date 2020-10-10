@@ -167,9 +167,9 @@ class DefaultConfig(ConfigBuilder):
     steps = {GROUP_NAME: "Training params",
              ARGS: ["-s", "--steps"],
              KWARGS: {TYPE: int, DEFAULT: 1_000_000, HELP: "Steps (default: %(default)s)"}}
-    quantization_training = {GROUP_NAME: "Training params",
-                             ARGS: ["-qt", "--quantizised-training"],
-                             KWARGS: {ACTION: "store_true",
+    quant_aware_train = {GROUP_NAME: "Training params",
+                         ARGS: ["-qat", "--quantization-aware-training"],
+                         KWARGS: {ACTION: "store_true",
                                       HELP: "Quantization aware training, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
     batch_size = {GROUP_NAME: "Training params",
                   ARGS: ["-b", "--batch-size"],
@@ -192,4 +192,16 @@ class DefaultConfig(ConfigBuilder):
                    KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as tflite model"}}
     save_tflite_q = {GROUP_NAME: "Saving params",
                      ARGS: ["--tflite-q"],
-                     KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as quantizised tflite model"}}
+                     KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as post-training quantizised tflite model, dynamic range quantization by default"}}
+    int_float_q = {GROUP_NAME: "Saving params",
+                 ARGS: ["--int-float-q"],
+                 KWARGS: {ACTION: "store_true",
+                          HELP: "Full integer quantization, integer with float fallback (default: %(default)s)"}}
+    int_q = {GROUP_NAME: "Saving params",
+             ARGS: ["--int-q"],
+             KWARGS: {ACTION: "store_true",
+                      HELP: "Full integer quantization, integer only (default: %(default)s)"}}
+    f16_q = {GROUP_NAME: "Saving params",
+           ARGS: ["--f16-q"],
+           KWARGS: {ACTION: "store_true",
+                    HELP: "Float16 quantization (default: %(default)s)"}}
