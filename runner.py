@@ -4,14 +4,9 @@ from typing import Tuple, Optional, Type, Dict, Generator, Any
 
 from pathlib import Path
 import tensorflow as tf
+import tflite_runtime.interpreter as tflite
 
-from metaneural.config import DefaultConfig
-
-MODEL = "MODEL"
-OPTIMIZER = "OPTIMIZER"
-CHECKPOINT = "CHECKPOINT"
-CHECKPOINT_MANAGER = "CHECKPOINT_MANAGER"
-QUANTIZATION_TRAINING = "QUANTIZATION_TRAINING"
+from metaneural.config import DefaultConfig, ConverterConfig
 
 
 class RegistryEntry:
@@ -19,14 +14,14 @@ class RegistryEntry:
                  name: str,
                  model: tf.keras.models.Model,
                  optimizer: tf.keras.optimizers.Optimizer,
-                 quant_aware_train: bool,
-                 representative_dataset: Optional[Generator] = None):
+                 q_aware_train: bool,
+                 repr_dataset: Optional[Generator] = None):
         self.name = name
         self.model = model
         self.optimizer = optimizer
 
-        self.quant_aware_train = quant_aware_train
-        self.representative_dataset = representative_dataset
+        self.q_aware_train = q_aware_train
+        self.repr_dataset = repr_dataset
 
         self.checkpoint = None
         self.checkpoint_manager = None
@@ -38,8 +33,8 @@ class RegistryEntry:
                                                              max_to_keep=max_to_keep,
                                                              checkpoint_name=self.name)
 
-    def quantize_model(self, global_quant_aware_train: bool):
-        if global_quant_aware_train and self.quant_aware_train:
+    def quantize_model(self, global_q_aware_train: bool):
+        if global_q_aware_train and self.q_aware_train:
             import tensorflow_model_optimization as tfmot
             self.model = tfmot.quantization.keras.quantize_model(self.model)
 
@@ -72,7 +67,7 @@ class Runner:
 
         for re in self.model_registry:
             re.set_checkpoint(self.run_path.joinpath("checkpoints"), max_to_keep=self.config.steps)
-            re.quantize_model(config.quant_aware_train)
+            re.quantize_model(config.q_aware_train)
 
     ################################################################
     # https://www.tensorflow.org/api_docs/python/tf/distribute
@@ -110,7 +105,7 @@ class Runner:
 
     def merge(func):
         """
-        Merge args across replicas and run merge_fn in a cross-replica context. Whatever that means.
+        Merge args across replicas and run merge_fn in a cross-replica context.
         https://www.tensorflow.org/api_docs/python/tf/distribute/ReplicaContext
         """
 
@@ -160,6 +155,13 @@ class Runner:
             print("\nSaving and stopping...")
             self._save_models()
 
+    @classmethod
+    def convert(cls, config: Type[DefaultConfig], converter_config: ConverterConfig, run_directory: Path):
+        self = cls(config=config,
+                   run_directory=run_directory)
+        self._load_models()
+        self._convert_models(converter_config)
+
     ################################################################
     def train_step(self) -> dict:
         raise NotImplementedError
@@ -195,45 +197,54 @@ class Runner:
         for re in self.model_registry:
             re.checkpoint.restore(re.checkpoint_manager.latest_checkpoint)
 
-    def _save_models(self):  # TODO separate converter
+    def _load_models(self):
         for re in self.model_registry:
-            # Tensorflow
+            re.model = tf.keras.models.load_model(str(self.model_path.joinpath(re.name)))
+
+    def _save_models(self):
+        for re in self.model_registry:
             re.model.save(str(self.model_path.joinpath(re.name)), save_format="tf")
 
-            if self.config.save_tflite or self.config.save_tflite_q:
-                # TFLite
-                if self.config.save_tflite:
-                    converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
-                    with self.model_path.joinpath(f"{re.name}.tflite").open("wb") as file:
-                        file.write(converter.convert())
+    def _convert_models(self, config: ConverterConfig):
+        for re in self.model_registry:
+            name = re.name + ".q-aware" if re.q_aware_train else ""
 
-                # TFLite quantizised
-                if self.config.save_tflite_q:
-                    converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
+            # TFLite
+            converter = tflite.TFLiteConverter.from_keras_model(re.model)
+            with self.model_path.joinpath(f"{name}.tflite").open("wb") as file:
+                file.write(converter.convert())
 
-                    # Dynamic range quantization
-                    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-                    with self.model_path.joinpath(f"{re.name}.q.tflite").open("wb") as file:
-                        file.write(converter.convert())
+            # TFLite quantizised
+            # Dynamic range quantization
+            if config.dyn_range_q:
+                converter = tflite.TFLiteConverter.from_keras_model(re.model)
+                converter.optimizations = [tflite.Optimize.DEFAULT]
+                with self.model_path.joinpath(f"{name}.dyn-range-q.tflite").open("wb") as file:
+                    file.write(converter.convert())
 
-                    converter.representative_dataset = re.representative_dataset
-                    # Full integer quantization, integer with float fallback
-                    if self.config.int_float_q:
-                        with self.model_path.joinpath(f"{re.name}.int-float-q.tflite").open("wb") as file:
-                            file.write(converter.convert())
+            # Full integer quantization, integer with float fallback
+            if config.int_float_q:
+                converter = tflite.TFLiteConverter.from_keras_model(re.model)
+                converter.optimizations = [tflite.Optimize.DEFAULT]
+                converter.repr_dataset = re.repr_dataset
+                with self.model_path.joinpath(f"{name}.int-float-q.tflite").open("wb") as file:
+                    file.write(converter.convert())
 
-                    # Full integer quantization, integer only
-                    if self.config.int_q:
-                        converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-                        converter.inference_input_type = tf.int8  # or tf.uint8  # TODO add type option
-                        converter.inference_output_type = tf.int8  # or tf.uint8
-                        with self.model_path.joinpath(f"{re.name}.int-q.tflite").open("wb") as file:
-                            file.write(converter.convert())
+            # Full integer quantization, integer only
+            if config.int_q is not None:
+                converter = tflite.TFLiteConverter.from_keras_model(re.model)
+                converter.optimizations = [tflite.Optimize.DEFAULT]
+                converter.repr_dataset = re.repr_dataset
+                converter.target_spec.supported_ops = [tflite.OpsSet.TFLITE_BUILTINS_INT8]
+                converter.inference_input_type = getattr(tf, config.int_q)
+                converter.inference_output_type = getattr(tf, config.int_q)
+                with self.model_path.joinpath(f"{name}.int-q.tflite").open("wb") as file:
+                    file.write(converter.convert())
 
-                    # Float16 quantization
-                    if self.config.f16_q:
-                        converter = tf.lite.TFLiteConverter.from_keras_model(re.model)
-                        converter.optimizations = [tf.lite.Optimize.DEFAULT]
-                        converter.target_spec.supported_types = [tf.float16]
-                        with self.model_path.joinpath(f"{re.name}.f16-q.tflite").open("wb") as file:
-                            file.write(converter.convert())
+            # Float16 quantization
+            if config.f16_q:
+                converter = tflite.TFLiteConverter.from_keras_model(re.model)
+                converter.optimizations = [tflite.Optimize.DEFAULT]
+                converter.target_spec.supported_types = [tf.float16]
+                with self.model_path.joinpath(f"{name}.f16-q.tflite").open("wb") as file:
+                    file.write(converter.convert())

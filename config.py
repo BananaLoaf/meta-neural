@@ -167,10 +167,10 @@ class DefaultConfig(ConfigBuilder):
     steps = {GROUP_NAME: "Training params",
              ARGS: ["-s", "--steps"],
              KWARGS: {TYPE: int, DEFAULT: 1_000_000, HELP: "Steps (default: %(default)s)"}}
-    quant_aware_train = {GROUP_NAME: "Training params",
-                         ARGS: ["-qat", "--quantization-aware-training"],
-                         KWARGS: {ACTION: "store_true",
-                                      HELP: "Quantization aware training, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
+    q_aware_train = {GROUP_NAME: "Training params",
+                     ARGS: ["-qat", "--quantization-aware-training"],
+                     KWARGS: {ACTION: "store_true",
+                                      HELP: "Quantization aware training for chosen models, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
     batch_size = {GROUP_NAME: "Training params",
                   ARGS: ["-b", "--batch-size"],
                   KWARGS: {TYPE: int, DEFAULT: 2, HELP: "Batch size (default: %(default)s)"}}  # TODO remove extra args
@@ -189,22 +189,29 @@ class DefaultConfig(ConfigBuilder):
                         ARGS: ["-vs"],
                         KWARGS: {TYPE: float, DEFAULT: 0.1, HELP: "Validation split"}}
 
-    # Saving params
-    save_tflite = {GROUP_NAME: "Saving params",
-                   ARGS: ["--tflite"],
-                   KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as tflite model"}}
-    save_tflite_q = {GROUP_NAME: "Saving params",
-                     ARGS: ["--tflite-q"],
-                     KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as post-training quantizised tflite model, dynamic range quantization by default"}}
-    int_float_q = {GROUP_NAME: "Saving params",
-                 ARGS: ["--int-float-q"],
-                 KWARGS: {ACTION: "store_true",
-                          HELP: "Full integer quantization, integer with float fallback (default: %(default)s)"}}
-    int_q = {GROUP_NAME: "Saving params",
-             ARGS: ["--int-q"],
+
+class ResumeConfig(ConfigBuilder):
+    path = {ARGS: ["path"],
+            KWARGS: {TYPE: str,
+                     HELP: "Path to run directory"}}
+
+
+class ConverterConfig(ConfigBuilder):
+    path = {ARGS: ["path"],
+            KWARGS: {TYPE: str,
+                     HELP: "Path to run directory"}}
+
+    dyn_range_q = {ARGS: ["--dyn-range-q"],
+                   KWARGS: {ACTION: "store_true",
+                            HELP: "Post-training dynamic range quantization, https://www.tensorflow.org/lite/performance/post_training_quantization"}}
+    int_float_q = {ARGS: ["--int-float-q"],
+                   KWARGS: {ACTION: "store_true",
+                            HELP: "Post-training full integer quantization, integer with float fallback"}}
+    int_q = {ARGS: ["--int-q"],
+             KWARGS: {TYPE: str,
+                      DEFAULT: None,
+                      CHOICES: ["int8", "uint8"],
+                      HELP: "Post-training full integer quantization, integer only (default: %(default)s)"}}
+    f16_q = {ARGS: ["--f16-q"],
              KWARGS: {ACTION: "store_true",
-                      HELP: "Full integer quantization, integer only (default: %(default)s)"}}
-    f16_q = {GROUP_NAME: "Saving params",
-           ARGS: ["--f16-q"],
-           KWARGS: {ACTION: "store_true",
-                    HELP: "Float16 quantization (default: %(default)s)"}}
+                      HELP: "Post-training float16 quantization"}}
