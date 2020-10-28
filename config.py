@@ -27,7 +27,14 @@ class ConfigBuilder:
             setattr(self.__class__, field, self.set_defaults(scheme))
 
     def get_attrs(self) -> str:
-        for attr, value in {**vars(self.__class__), **vars(self.__class__.__base__)}.items():
+        all_vars = {**vars(self.__class__)}
+        for cls in self.__class__.__bases__:
+            if cls.__name__ == ConfigBuilder.__name__:
+                break
+            else:
+                all_vars = {**all_vars, **vars(cls)}
+
+        for attr, value in all_vars.items():
             if not (attr.startswith("__") and attr.endswith("__")) and not isinstance(value, Callable):
                 yield attr
 
@@ -65,7 +72,9 @@ class ConfigBuilder:
             else:
                 target_parser = parser
 
-            target_parser.add_argument(*scheme[ARGS], **scheme[KWARGS], dest=field)
+            target_parser.add_argument(*scheme[ARGS],
+                                       **scheme[KWARGS],
+                                       **{"dest": field} if field.startswith("-") else {})
 
         ################################################################
         # Parse
@@ -166,28 +175,32 @@ class DefaultConfig(ConfigBuilder):
     step = {CONSTANT: 0}
     steps = {GROUP_NAME: "Training params",
              ARGS: ["-s", "--steps"],
-             KWARGS: {TYPE: int, DEFAULT: 1_000_000, HELP: "Steps (default: %(default)s)"}}
+             KWARGS: {TYPE: int,
+                      REQUIRED: True,
+                      HELP: "Steps (default: %(default)s)"}}
     q_aware_train = {GROUP_NAME: "Training params",
                      ARGS: ["-qat", "--quantization-aware-training"],
                      KWARGS: {ACTION: "store_true",
-                                      HELP: "Quantization aware training for chosen models, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
-    batch_size = {GROUP_NAME: "Training params",
-                  ARGS: ["-b", "--batch-size"],
-                  KWARGS: {TYPE: int, DEFAULT: 2, HELP: "Batch size (default: %(default)s)"}}  # TODO remove extra args
-    checkpoint_freq = {GROUP_NAME: "Training params",
-                       ARGS: ["-cf", "--checkpoint-freq"],
-                       KWARGS: {TYPE: int, DEFAULT: 10_000,
-                                HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
-    sample_freq = {GROUP_NAME: "Training params",
-                   ARGS: ["-sf", "--sample-freq"],
-                   KWARGS: {TYPE: int, DEFAULT: 100, HELP: "Sampling frequency in steps (default: %(default)s)"}}
-    validation_freq = {GROUP_NAME: "Training params",
-                       ARGS: ["-vf", "--validation-freq"],
-                       KWARGS: {TYPE: int, DEFAULT: 1_000,
-                                HELP: "Validation frequency in steps (default: %(default)s)"}}
+                              HELP: "Quantization aware training for chosen models, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
     validation_split = {GROUP_NAME: "Training params",
                         ARGS: ["-vs"],
                         KWARGS: {TYPE: float, DEFAULT: 0.1, HELP: "Validation split"}}
+
+    checkpoint_freq = {GROUP_NAME: "Other",
+                       ARGS: ["-cf", "--checkpoint-freq"],
+                       KWARGS: {TYPE: int,
+                                REQUIRED: True,
+                                HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
+    sample_freq = {GROUP_NAME: "Other",
+                   ARGS: ["-sf", "--sample-freq"],
+                   KWARGS: {TYPE: int,
+                            REQUIRED: True,
+                            HELP: "Sampling frequency in steps (default: %(default)s)"}}
+    validation_freq = {GROUP_NAME: "Other",
+                       ARGS: ["-vf", "--validation-freq"],
+                       KWARGS: {TYPE: int,
+                                REQUIRED: True,
+                                HELP: "Validation frequency in steps (default: %(default)s)"}}
 
 
 class ResumeConfig(ConfigBuilder):
