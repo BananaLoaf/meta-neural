@@ -14,13 +14,12 @@ class RegistryEntry:
                  name: str,
                  model: tf.keras.models.Model,
                  optimizer: tf.keras.optimizers.Optimizer,
-                 q_aware_train: bool,
                  repr_dataset: Optional[Generator] = None):
         self.name = name
         self.model = model
         self.optimizer = optimizer
 
-        self.q_aware_train = q_aware_train
+        self.q_aware_train = False
         self.repr_dataset = repr_dataset
 
         self.checkpoint = None
@@ -33,8 +32,10 @@ class RegistryEntry:
                                                              max_to_keep=max_to_keep,
                                                              checkpoint_name=self.name)
 
-    def quantize_model(self, global_q_aware_train: bool):
-        if global_q_aware_train and self.q_aware_train:
+    def quantize_model(self, q_aware_train: bool):
+        self.q_aware_train = q_aware_train
+
+        if q_aware_train:
             import tensorflow_model_optimization as tfmot
             self.model = tfmot.quantization.keras.quantize_model(self.model)
 
@@ -65,9 +66,9 @@ class Runner:
         self._strategy = self._init_strategy()
         self.model_registry = self.init_networks()
 
-        for re in self.model_registry:
+        for i, re in enumerate(self.model_registry):
             re.set_checkpoint(self.run_path.joinpath("checkpoints"), max_to_keep=self.config.steps)
-            re.quantize_model(config.q_aware_train)
+            re.quantize_model(bool(config.q_aware_train[i]))
 
     ################################################################
     # https://www.tensorflow.org/api_docs/python/tf/distribute
@@ -150,7 +151,7 @@ class Runner:
         self._summary()
 
         try:
-            self.train()
+            self.train(resume=True)
         except KeyboardInterrupt:
             print("\nSaving and stopping...")
             self._save_models()
@@ -166,7 +167,7 @@ class Runner:
     def train_step(self) -> dict:
         raise NotImplementedError
 
-    def train(self):
+    def train(self, resume: bool = False):
         raise NotImplementedError
 
     def validate(self) -> dict:

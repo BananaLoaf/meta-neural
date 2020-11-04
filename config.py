@@ -14,6 +14,7 @@ SAVE = "SAVE"
 
 TYPE = "type"
 ACTION = "action"
+NARGS = "nargs"
 REQUIRED = "required"
 DEFAULT = "default"
 CHOICES = "choices"
@@ -72,9 +73,9 @@ class ConfigBuilder:
             else:
                 target_parser = parser
 
-            target_parser.add_argument(*scheme[ARGS],
-                                       **scheme[KWARGS],
-                                       **{"dest": field} if field.startswith("-") else {})
+            if scheme[ARGS][0].startswith("-"):
+                scheme[KWARGS]["dest"] = field
+            target_parser.add_argument(*scheme[ARGS], **scheme[KWARGS])
 
         ################################################################
         # Parse
@@ -180,11 +181,15 @@ class DefaultConfig(ConfigBuilder):
                       HELP: "Steps (default: %(default)s)"}}
     q_aware_train = {GROUP_NAME: "Training params",
                      ARGS: ["-qat", "--quantization-aware-training"],
-                     KWARGS: {ACTION: "store_true",
+                     KWARGS: {NARGS: "+",
+                              TYPE: int,
+                              DEFAULT: [0],
                               HELP: "Quantization aware training for chosen models, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
     validation_split = {GROUP_NAME: "Training params",
                         ARGS: ["-vs"],
-                        KWARGS: {TYPE: float, DEFAULT: 0.1, HELP: "Validation split"}}
+                        KWARGS: {TYPE: float,
+                                 DEFAULT: 0.1,
+                                 HELP: "Validation split (default: %(default)s)"}}
 
     checkpoint_freq = {GROUP_NAME: "Other",
                        ARGS: ["-cf", "--checkpoint-freq"],
