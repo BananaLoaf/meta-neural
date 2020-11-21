@@ -201,23 +201,31 @@ class DefaultConfig(ConfigBuilder):
                    KWARGS: {TYPE: int,
                             REQUIRED: True,
                             HELP: "Sampling frequency in steps (default: %(default)s)"}}
-    validation_freq = {GROUP_NAME: "Other",
-                       ARGS: ["-vf", "--validation-freq"],
-                       KWARGS: {TYPE: int,
-                                REQUIRED: True,
-                                HELP: "Validation frequency in steps (default: %(default)s)"}}
+    test_freq = {GROUP_NAME: "Other",
+                 ARGS: ["-tf", "--test-freq"],
+                 KWARGS: {TYPE: int,
+                          REQUIRED: True,
+                          HELP: "Test frequency in steps (default: %(default)s)"}}
 
 
 class ResumeConfig(ConfigBuilder):
     path = {ARGS: ["path"],
             KWARGS: {TYPE: str,
                      HELP: "Path to run directory"}}
+    checkpoint_step = {ARGS: ["--ckpt-step"],
+                       KWARGS: {TYPE: int,
+                                DEFAULT: None,
+                                HELP: "Checkpoint step to load, None for latest checkpoint (default: %(default)s)"}}
 
 
 class ConverterConfig(ConfigBuilder):
     path = {ARGS: ["path"],
             KWARGS: {TYPE: str,
                      HELP: "Path to run directory"}}
+    checkpoint_step = {ARGS: ["--ckpt-step"],
+                       KWARGS: {TYPE: int,
+                                DEFAULT: None,
+                                HELP: "Checkpoint step to load, None for latest checkpoint (default: %(default)s)"}}
 
     dyn_range_q = {ARGS: ["--dyn-range-q"],
                    KWARGS: {ACTION: "store_true",

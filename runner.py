@@ -6,7 +6,7 @@ from pathlib import Path
 import tensorflow as tf
 import tflite_runtime.interpreter as tflite
 
-from metaneural.config import DefaultConfig, ConverterConfig
+from metaneural.config import DefaultConfig, ConverterConfig, ResumeConfig
 
 
 class RegistryEntry:
@@ -59,7 +59,7 @@ class Runner:
         self.train_writer = tf.summary.create_file_writer(str(self.run_path.joinpath("train")))
         self.train_writer.set_as_default()
 
-        self.validate_writer = tf.summary.create_file_writer(str(self.run_path.joinpath("validate")))
+        self.test_writer = tf.summary.create_file_writer(str(self.run_path.joinpath("test")))
 
         ################################################################
         self.dataloader = self.init_dataloader()
@@ -140,37 +140,40 @@ class Runner:
         try:
             self.train()
         except KeyboardInterrupt:
-            print("\nSaving and stopping...")
-            self._save_models()
+            print("\nStopping...")
 
     @classmethod
-    def resume(cls, config: Type[DefaultConfig], run_directory: Path):
+    def resume(cls, config: Type[DefaultConfig], resume_config: ResumeConfig):
         self = cls(config=config,
-                   run_directory=run_directory)
-        self._restore()
+                   run_directory=Path(resume_config.path))
+        self._restore(step=resume_config.checkpoint_step)
         self._summary()
+
+        if resume_config.checkpoint_step is not None:
+            config.step = resume_config.checkpoint_step
 
         try:
             self.train(resume=True)
         except KeyboardInterrupt:
-            print("\nSaving and stopping...")
-            self._save_models()
+            print("\nStopping...")
 
     @classmethod
-    def convert(cls, config: Type[DefaultConfig], converter_config: ConverterConfig, run_directory: Path):
+    def convert(cls, config: Type[DefaultConfig], converter_config: ConverterConfig):
         self = cls(config=config,
-                   run_directory=run_directory)
-        self._load_models()
+                   run_directory=Path(converter_config.path))
+        self._restore(step=converter_config.checkpoint_step)
+
+        print("Saving models")
+        self._save_models()
+
+        print("Converting models")
         self._convert_models(converter_config)
 
     ################################################################
-    def train_step(self) -> dict:
-        raise NotImplementedError
-
     def train(self, resume: bool = False):
         raise NotImplementedError
 
-    def validate(self) -> dict:
+    def test(self) -> dict:
         raise NotImplementedError
 
     ################################################################
@@ -183,7 +186,7 @@ class Runner:
         for re in self.model_registry:
             re.model.summary()
             if plot:
-                tf.keras.utils.plot_model(re.model, to_file=self.run_path.joinpath(re.name), show_shapes=True, dpi=64)
+                tf.keras.utils.plot_model(re.model, to_file=self.run_path.joinpath(f"{re.name}.png"), show_shapes=True, dpi=64)
 
     def _save_config(self):
         self.config.save(self.run_path.joinpath("config.json"))
@@ -194,9 +197,14 @@ class Runner:
             re.checkpoint_manager.save(step)
 
     @with_strategy
-    def _restore(self):
+    def _restore(self, step: Optional[int] = None):
         for re in self.model_registry:
-            re.checkpoint.restore(re.checkpoint_manager.latest_checkpoint)
+            if step is None:
+                checkpoint_path = re.checkpoint_manager.latest_checkpoint
+            else:
+                checkpoint_path = str(re.checkpoint_manager._directory.joinpath(f"{re.name}-{step}"))
+
+            re.checkpoint.restore(checkpoint_path)
 
     def _load_models(self):
         for re in self.model_registry:
@@ -204,7 +212,8 @@ class Runner:
 
     def _save_models(self):
         for re in self.model_registry:
-            re.model.save(str(self.model_path.joinpath(re.name)), save_format="tf")
+            name = re.name + ".q-aware" if re.q_aware_train else ""
+            re.model.save(str(self.model_path.joinpath(name)), save_format="tf")
 
     def _convert_models(self, config: ConverterConfig):
         for re in self.model_registry:
@@ -223,25 +232,6 @@ class Runner:
                 with self.model_path.joinpath(f"{name}.dyn-range-q.tflite").open("wb") as file:
                     file.write(converter.convert())
 
-            # Full integer quantization, integer with float fallback
-            if config.int_float_q:
-                converter = tflite.TFLiteConverter.from_keras_model(re.model)
-                converter.optimizations = [tflite.Optimize.DEFAULT]
-                converter.repr_dataset = re.repr_dataset
-                with self.model_path.joinpath(f"{name}.int-float-q.tflite").open("wb") as file:
-                    file.write(converter.convert())
-
-            # Full integer quantization, integer only
-            if config.int_q is not None:
-                converter = tflite.TFLiteConverter.from_keras_model(re.model)
-                converter.optimizations = [tflite.Optimize.DEFAULT]
-                converter.repr_dataset = re.repr_dataset
-                converter.target_spec.supported_ops = [tflite.OpsSet.TFLITE_BUILTINS_INT8]
-                converter.inference_input_type = getattr(tf, config.int_q)
-                converter.inference_output_type = getattr(tf, config.int_q)
-                with self.model_path.joinpath(f"{name}.int-q.tflite").open("wb") as file:
-                    file.write(converter.convert())
-
             # Float16 quantization
             if config.f16_q:
                 converter = tflite.TFLiteConverter.from_keras_model(re.model)
@@ -249,3 +239,25 @@ class Runner:
                 converter.target_spec.supported_types = [tf.float16]
                 with self.model_path.joinpath(f"{name}.f16-q.tflite").open("wb") as file:
                     file.write(converter.convert())
+
+            if re.repr_dataset is None:
+                print(f"No representative dataset for {re.name}")
+            else:
+                # Full integer quantization, integer with float fallback
+                if config.int_float_q:
+                    converter = tflite.TFLiteConverter.from_keras_model(re.model)
+                    converter.optimizations = [tflite.Optimize.DEFAULT]
+                    converter.repr_dataset = re.repr_dataset
+                    with self.model_path.joinpath(f"{name}.int-float-q.tflite").open("wb") as file:
+                        file.write(converter.convert())
+
+                # Full integer quantization, integer only
+                if config.int_q is not None:
+                    converter = tflite.TFLiteConverter.from_keras_model(re.model)
+                    converter.optimizations = [tflite.Optimize.DEFAULT]
+                    converter.repr_dataset = re.repr_dataset
+                    converter.target_spec.supported_ops = [tflite.OpsSet.TFLITE_BUILTINS_INT8]
+                    converter.inference_input_type = getattr(tf, config.int_q)
+                    converter.inference_output_type = getattr(tf, config.int_q)
+                    with self.model_path.joinpath(f"{name}.int-q.tflite").open("wb") as file:
+                        file.write(converter.convert())
