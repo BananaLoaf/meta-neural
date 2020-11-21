@@ -14,6 +14,7 @@ SAVE = "SAVE"
 
 TYPE = "type"
 ACTION = "action"
+NARGS = "nargs"
 REQUIRED = "required"
 DEFAULT = "default"
 CHOICES = "choices"
@@ -27,7 +28,14 @@ class ConfigBuilder:
             setattr(self.__class__, field, self.set_defaults(scheme))
 
     def get_attrs(self) -> str:
-        for attr, value in {**vars(self.__class__), **vars(self.__class__.__base__)}.items():
+        all_vars = {**vars(self.__class__)}
+        for cls in self.__class__.__bases__:
+            if cls.__name__ == ConfigBuilder.__name__:
+                break
+            else:
+                all_vars = {**all_vars, **vars(cls)}
+
+        for attr, value in all_vars.items():
             if not (attr.startswith("__") and attr.endswith("__")) and not isinstance(value, Callable):
                 yield attr
 
@@ -65,7 +73,9 @@ class ConfigBuilder:
             else:
                 target_parser = parser
 
-            target_parser.add_argument(*scheme[ARGS], **scheme[KWARGS], dest=field)
+            if scheme[ARGS][0].startswith("-"):
+                scheme[KWARGS]["dest"] = field
+            target_parser.add_argument(*scheme[ARGS], **scheme[KWARGS])
 
         ################################################################
         # Parse
@@ -166,23 +176,68 @@ class DefaultConfig(ConfigBuilder):
     step = {CONSTANT: 0}
     steps = {GROUP_NAME: "Training params",
              ARGS: ["-s", "--steps"],
-             KWARGS: {TYPE: int, DEFAULT: 1_000_000, HELP: "Steps (default: %(default)s)"}}
-    quantization_training = {GROUP_NAME: "Training params",
-                             ARGS: ["-qt", "--quantizised-training"],
-                             KWARGS: {ACTION: "store_true",
-                                      HELP: "Quantization aware training, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
-    batch_size = {GROUP_NAME: "Training params",
-                  ARGS: ["-b", "--batch-size"],
-                  KWARGS: {TYPE: int, DEFAULT: 2, HELP: "Batch size (default: %(default)s)"}}
-    checkpoint_freq = {GROUP_NAME: "Training params",
-                       ARGS: ["-cf", "--checkpoint-freq"],
-                       KWARGS: {TYPE: int, DEFAULT: 10_000,
-                                HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
+             KWARGS: {TYPE: int,
+                      REQUIRED: True,
+                      HELP: "Steps (default: %(default)s)"}}
+    q_aware_train = {GROUP_NAME: "Training params",
+                     ARGS: ["-qat", "--quantization-aware-training"],
+                     KWARGS: {NARGS: "+",
+                              TYPE: int,
+                              DEFAULT: [0],
+                              HELP: "Quantization aware training for chosen models, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
+    validation_split = {GROUP_NAME: "Training params",
+                        ARGS: ["-vs"],
+                        KWARGS: {TYPE: float,
+                                 DEFAULT: 0.1,
+                                 HELP: "Validation split (default: %(default)s)"}}
 
-    # Saving params
-    save_tflite = {GROUP_NAME: "Saving params",
-                   ARGS: ["--tflite"],
-                   KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as tflite model"}}
-    save_tflite_q = {GROUP_NAME: "Saving params",
-                     ARGS: ["--tflite-q"],
-                     KWARGS: {ACTION: "store_true", DEFAULT: False, HELP: "Save as quantizised tflite model"}}
+    checkpoint_freq = {GROUP_NAME: "Other",
+                       ARGS: ["-cf", "--checkpoint-freq"],
+                       KWARGS: {TYPE: int,
+                                REQUIRED: True,
+                                HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
+    sample_freq = {GROUP_NAME: "Other",
+                   ARGS: ["-sf", "--sample-freq"],
+                   KWARGS: {TYPE: int,
+                            REQUIRED: True,
+                            HELP: "Sampling frequency in steps (default: %(default)s)"}}
+    test_freq = {GROUP_NAME: "Other",
+                 ARGS: ["-tf", "--test-freq"],
+                 KWARGS: {TYPE: int,
+                          REQUIRED: True,
+                          HELP: "Test frequency in steps (default: %(default)s)"}}
+
+
+class ResumeConfig(ConfigBuilder):
+    path = {ARGS: ["path"],
+            KWARGS: {TYPE: str,
+                     HELP: "Path to run directory"}}
+    checkpoint_step = {ARGS: ["--ckpt-step"],
+                       KWARGS: {TYPE: int,
+                                DEFAULT: None,
+                                HELP: "Checkpoint step to load, None for latest checkpoint (default: %(default)s)"}}
+
+
+class ConverterConfig(ConfigBuilder):
+    path = {ARGS: ["path"],
+            KWARGS: {TYPE: str,
+                     HELP: "Path to run directory"}}
+    checkpoint_step = {ARGS: ["--ckpt-step"],
+                       KWARGS: {TYPE: int,
+                                DEFAULT: None,
+                                HELP: "Checkpoint step to load, None for latest checkpoint (default: %(default)s)"}}
+
+    dyn_range_q = {ARGS: ["--dyn-range-q"],
+                   KWARGS: {ACTION: "store_true",
+                            HELP: "Post-training dynamic range quantization, https://www.tensorflow.org/lite/performance/post_training_quantization"}}
+    int_float_q = {ARGS: ["--int-float-q"],
+                   KWARGS: {ACTION: "store_true",
+                            HELP: "Post-training full integer quantization, integer with float fallback"}}
+    int_q = {ARGS: ["--int-q"],
+             KWARGS: {TYPE: str,
+                      DEFAULT: None,
+                      CHOICES: ["int8", "uint8"],
+                      HELP: "Post-training full integer quantization, integer only (default: %(default)s)"}}
+    f16_q = {ARGS: ["--f16-q"],
+             KWARGS: {ACTION: "store_true",
+                      HELP: "Post-training float16 quantization"}}
