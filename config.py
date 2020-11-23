@@ -185,11 +185,11 @@ class DefaultConfig(ConfigBuilder):
                               TYPE: int,
                               DEFAULT: [0],
                               HELP: "Quantization aware training for chosen models, https://www.tensorflow.org/model_optimization/guide/quantization/training (default: %(default)s)"}}
-    validation_split = {GROUP_NAME: "Training params",
-                        ARGS: ["-vs"],
-                        KWARGS: {TYPE: float,
-                                 DEFAULT: 0.1,
-                                 HELP: "Validation split (default: %(default)s)"}}
+    test_split = {GROUP_NAME: "Training params",
+                  ARGS: ["-ts"],
+                  KWARGS: {TYPE: float,
+                           DEFAULT: 0.1,
+                           HELP: "Test split (default: %(default)s)"}}
 
     checkpoint_freq = {GROUP_NAME: "Other",
                        ARGS: ["-cf", "--checkpoint-freq"],

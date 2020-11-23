@@ -3,43 +3,28 @@ from typing import Optional
 import tensorflow as tf
 
 
-class MinMaxNormalizationLayer(tf.keras.layers.Layer):
-    def __init__(self, min: float, max: float, newmin: float, newmax: float, round: bool = False, *args, **kwargs):
-        super(MinMaxNormalizationLayer, self).__init__(*args, **kwargs)
-        self.min = min
-        self.max = max
-        self.newmin = newmin
-        self.newmax = newmax
-
-        self.round = round
-
-    def call(self, input, **kwargs):
-        res = (input - self.min)/(self.max - self.min) * (self.newmax - self.newmin) + self.newmin
-
-        if self.round:
-            res = tf.math.round(res)
-
-        return res
-
-
-class SwitchLayer(tf.keras.layers.Layer):
+class Switch(tf.keras.layers.Layer):
     def __init__(self, run: Optional[tf.keras.layers.Layer] = None, train: Optional[tf.keras.layers.Layer] = None, *args, **kwargs):
-        super(SwitchLayer, self).__init__(*args, **kwargs)
-
         self.run = run
         self.train = train
 
-    def call(self, input, **kwargs):
-        kwargs.setdefault("training", False)
+        if run is not None and train is not None:
+            assert run.input_shape == train.input_shape, "Input tensor shape mismatch"
+            assert run.output_shape == train.output_shape, "Output tensor shape mismatch"
 
-        if kwargs["training"]:
-            if self.train is None:
-                return input
-            else:
-                return self.train(input)
+        super(Switch, self).__init__(*args, **kwargs)
+
+    def call(self, inputs, training=False):
+        if training:
+            return inputs if self.train is None else self.train(inputs)
 
         else:
-            if self.run is None:
-                return input
-            else:
-                return self.run(input)
+            return inputs if self.run is None else self.run(inputs)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+    def get_config(self):
+        config = super(Switch, self).get_config()
+        config.update(run=self.run, train=self.train)
+        return config
