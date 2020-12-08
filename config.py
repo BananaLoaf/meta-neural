@@ -173,12 +173,15 @@ class DefaultConfig(ConfigBuilder):
                         HELP: "XLA Just In Time compilation, https://www.tensorflow.org/xla (default: %(default)s)"}}
 
     # Training params
-    step = {CONSTANT: 0}
-    steps = {GROUP_NAME: "Training params",
-             ARGS: ["-s", "--steps"],
-             KWARGS: {TYPE: int,
+    epoch = {CONSTANT: 0}
+    epochs = {GROUP_NAME: "Training params",
+              ARGS: ["-e", "--epochs"],
+              KWARGS: {TYPE: int,
                       REQUIRED: True,
-                      HELP: "Steps (default: %(default)s)"}}
+                      HELP: "Epochs (default: %(default)s)"}}
+    batch_size = {GROUP_NAME: "Dataloader params",
+                  ARGS: ["-b", "--batch-size"],
+                  KWARGS: {TYPE: int, DEFAULT: 1, HELP: "Batch size (default: %(default)s)"}}
     q_aware_train = {GROUP_NAME: "Training params",
                      ARGS: ["-qat", "--quantization-aware-training"],
                      KWARGS: {NARGS: "+",
@@ -195,37 +198,37 @@ class DefaultConfig(ConfigBuilder):
                        ARGS: ["-cf", "--checkpoint-freq"],
                        KWARGS: {TYPE: int,
                                 REQUIRED: True,
-                                HELP: "Checkpoint frequency in steps (default: %(default)s)"}}
+                                HELP: "Checkpoint frequency in epochs (default: %(default)s)"}}
     sample_freq = {GROUP_NAME: "Other",
                    ARGS: ["-sf", "--sample-freq"],
                    KWARGS: {TYPE: int,
                             REQUIRED: True,
-                            HELP: "Sampling frequency in steps (default: %(default)s)"}}
+                            HELP: "Sampling frequency in batches (default: %(default)s)"}}
     test_freq = {GROUP_NAME: "Other",
                  ARGS: ["-tf", "--test-freq"],
                  KWARGS: {TYPE: int,
                           REQUIRED: True,
-                          HELP: "Test frequency in steps (default: %(default)s)"}}
+                          HELP: "Test frequency in epochs (default: %(default)s)"}}
 
 
 class ResumeConfig(ConfigBuilder):
     path = {ARGS: ["path"],
             KWARGS: {TYPE: str,
                      HELP: "Path to run directory"}}
-    checkpoint_step = {ARGS: ["--ckpt-step"],
-                       KWARGS: {TYPE: int,
-                                DEFAULT: None,
-                                HELP: "Checkpoint step to load, None for latest checkpoint (default: %(default)s)"}}
+    checkpoint_epoch = {ARGS: ["--ckpt-epoch"],
+                        KWARGS: {TYPE: int,
+                                 DEFAULT: None,
+                                 HELP: "Checkpoint epoch to load, None for latest checkpoint (default: %(default)s)"}}
 
 
 class ConverterConfig(ConfigBuilder):
     path = {ARGS: ["path"],
             KWARGS: {TYPE: str,
                      HELP: "Path to run directory"}}
-    checkpoint_step = {ARGS: ["--ckpt-step"],
-                       KWARGS: {TYPE: int,
-                                DEFAULT: None,
-                                HELP: "Checkpoint step to load, None for latest checkpoint (default: %(default)s)"}}
+    checkpoint_epoch = {ARGS: ["--ckpt-epoch"],
+                        KWARGS: {TYPE: int,
+                                 DEFAULT: None,
+                                 HELP: "Checkpoint epoch to load, None for latest checkpoint (default: %(default)s)"}}
 
     dyn_range_q = {ARGS: ["--dyn-range-q"],
                    KWARGS: {ACTION: "store_true",
